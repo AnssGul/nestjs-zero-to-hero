@@ -1,12 +1,19 @@
+import { Jwt } from './../../node_modules/@types/jsonwebtoken/index.d';
 import { ForbiddenException, Injectable } from "@nestjs/common";
 import { AuthDto } from './dto';
 import * as argon2 from 'argon2';
 import { PrismaService } from "src/prisma/prisma.service";
 import { PrismaClientKnownRequestError } from "generated/prisma/runtime/library";
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AuthService {
-    constructor(private prisma: PrismaService) { }
+    constructor(private prisma: PrismaService,
+        private Jwt: JwtService,
+        private config: ConfigService,
+
+    ) { }
     async signup(dto: AuthDto) {
 
         try {
@@ -21,7 +28,12 @@ export class AuthService {
 
             })
             delete user.hash;
-            return user;
+            return {
+                "message": "User created successfully",
+                "user": user,
+
+
+            };
         }
         catch (error) {
             if (error instanceof PrismaClientKnownRequestError) {
@@ -34,7 +46,7 @@ export class AuthService {
     }
 
     async login(dto: AuthDto) {
-        const user = this.prisma.user.findUnique({
+        const user = await this.prisma.user.findUnique({
             where: {
                 email: dto.email,
             },
@@ -47,7 +59,22 @@ export class AuthService {
         if (!passwordMatches) {
             throw new ForbiddenException('Credentials incorrect');
         }
-        delete (await user).hash;
-        return user;
+
+        return this.signToken(user.id, user.email);
+    }
+    async signToken(userId: number, email: string): Promise<{ access_token: string }> {
+        const payload = {
+            sub: userId,
+            email,
+        };
+        const secret = this.config.get('JWT_SECRET');
+        const token = await this.Jwt.signAsync(payload, {
+            expiresIn: '15m',
+            secret: secret,
+        });
+        return {
+            access_token: token,
+
+        };
     }
 }
